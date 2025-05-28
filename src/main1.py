@@ -3,7 +3,7 @@ import os
 import sys
 import time
 import statistics
-import glob  # Импортируем модуль glob для поиска файлов
+import glob
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.core.puzzle import Puzzle
@@ -25,237 +25,208 @@ from src.core.ModifiedIterativeILP import ModifiedIterativeILP
 import pandas as pd
 import matplotlib.pyplot as plt
 
+def select_puzzle_folder():
+    """Позволяет пользователю выбрать папку с головоломками."""
+    base_path = os.path.join(os.path.dirname(__file__), '..', 'examples')
+    # Добавим опцию для выбора папки output из hashi-generator
+    output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'hashi-generator', 'output'))
+    folders = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
+    folders.append('hashi-generator/output')  # Добавляем опцию для output
+    
+    print("\nДоступные папки с головоломками:")
+    for i, folder in enumerate(folders, 1):
+        print(f"{i}. {folder}")
+    
+    while True:
+        try:
+            choice = int(input("\nВыберите номер папки (1-{}): ".format(len(folders))))
+            if 1 <= choice <= len(folders):
+                if folders[choice-1] == 'hashi-generator/output':
+                    return output_path
+                return os.path.join(base_path, folders[choice-1])
+            print("Неверный выбор. Попробуйте снова.")
+        except ValueError:
+            print("Пожалуйста, введите число.")
+
+def calculate_metrics(puzzle, solution):
+    """Вычисляет дополнительные метрики для решения."""
+    if not solution:
+        return {
+            'bridge_count': 0,
+            'island_connectivity': 0,
+            'solution_density': 0,
+            'max_bridges_per_island': 0
+        }
+    
+    islands = puzzle.get_all_islands()
+    total_islands = len(islands)
+    total_possible_bridges = (total_islands * (total_islands - 1)) // 2
+    
+    # Количество мостов
+    bridge_count = sum(solution.values())
+    
+    # Подсчет связности островов
+    connected_islands = set()
+    for (i, j), bridges in solution.items():
+        if bridges > 0:
+            connected_islands.add(i)
+            connected_islands.add(j)
+    island_connectivity = len(connected_islands) / total_islands
+    
+    # Плотность решения
+    solution_density = bridge_count / total_possible_bridges if total_possible_bridges > 0 else 0
+    
+    # Максимальное количество мостов на один остров
+    island_bridges = {}
+    for (i, j), bridges in solution.items():
+        island_bridges[i] = island_bridges.get(i, 0) + bridges
+        island_bridges[j] = island_bridges.get(j, 0) + bridges
+    max_bridges_per_island = max(island_bridges.values()) if island_bridges else 0
+    
+    return {
+        'bridge_count': bridge_count,
+        'island_connectivity': island_connectivity,
+        'solution_density': solution_density,
+        'max_bridges_per_island': max_bridges_per_island
+    }
+
 def run_test(puzzle_file, num_runs=5, ModelClass=OriginalModel, SolverClass=OriginalSolver):
-    """Запускает несколько прогонов решения головоломки и возвращает статистику."""
+    """Запускает несколько прогонов решения головоломки и возвращает расширенную статистику."""
     times = []
-    algorithm_times = []  # Время работы только алгоритма
+    algorithm_times = []
     solutions = []
     statuses = []
     best_solution = None
     best_time = float('inf')
     best_algorithm_time = float('inf')
+    metrics = []
 
     for i in range(num_runs):
         try:
             puzzle = Puzzle.from_file(puzzle_file)
         except FileNotFoundError:
             print(f"File not found: {puzzle_file}")
-            return [], [], [], [], None
+            return {'statuses': [], 'solutions': [], 'times': [], 'algorithm_times': [], 'best_solution': None, 'metrics': []}
         except Exception as e:
             print(f"Error loading puzzle from {puzzle_file}: {e}")
-            return [], [], [], [], None
+            return {'statuses': [], 'solutions': [], 'times': [], 'algorithm_times': [], 'best_solution': None, 'metrics': []}
 
         start_time = time.time()
-        model = ModelClass(puzzle)
-        solver = SolverClass(model)
-        algorithm_start_time = time.time()  # Засекаем время начала работы алгоритма
-
-        # Вызываем правильный метод solve в зависимости от класса решателя
-        if SolverClass == OriginalSolver:
-            status, solution = solver.solve_with_cuts()
-        elif SolverClass == FlowSolver:
-            status, solution = solver.solve()
-        else:
-            print(f"Unknown SolverClass: {SolverClass}")
-            return [], [], [], [], None
-
-        algorithm_end_time = time.time()    # Засекаем время окончания работы алгоритма
-        end_time = time.time()
-
-        times.append(end_time - start_time)
-        algorithm_times.append(algorithm_end_time - algorithm_start_time)
-        solutions.append(solution)
-        statuses.append(status)
-        print(f"Run {i + 1}: Status = {status}, Total Time = {end_time - start_time:.4f} seconds, Algorithm Time = {algorithm_end_time - algorithm_start_time:.4f} seconds")
-
-        if status == pywraplp.Solver.OPTIMAL or status == pywraplp.Solver.FEASIBLE:
+        
+        # Специальная обработка для ModifiedIterativeILP
+        if ModelClass == ModifiedIterativeILP:
+            solver = ModelClass(puzzle)
+            algorithm_start_time = time.time()
+            solution = solver.solve()
+            algorithm_end_time = time.time()
+            end_time = time.time()
+            
+            times.append(end_time - start_time)
+            algorithm_times.append(algorithm_end_time - algorithm_start_time)
+            solutions.append(solution)
+            status = pywraplp.Solver.OPTIMAL if solution else pywraplp.Solver.INFEASIBLE
+            statuses.append(status)
+            
+            if solution:
+                metrics.append(calculate_metrics(puzzle, solution))
+            
             if solution and is_solution_valid(puzzle, solution):
                 if algorithm_end_time - algorithm_start_time < best_algorithm_time:
                     best_time = end_time - start_time
                     best_algorithm_time = algorithm_end_time - algorithm_start_time
                     best_solution = solution
+        else:
+            model = ModelClass(puzzle)
+            solver = SolverClass(model)
+            algorithm_start_time = time.time()
+
+            # Вызываем правильный метод solve в зависимости от класса решателя
+            if SolverClass == OriginalSolver:
+                status, solution = solver.solve_with_cuts()
+            elif SolverClass == FlowSolver:
+                status, solution = solver.solve()
             else:
-                print("Invalid Solution")
+                print(f"Unknown SolverClass: {SolverClass}")
+                return {'statuses': [], 'solutions': [], 'times': [], 'algorithm_times': [], 'best_solution': None, 'metrics': []}
+
+            algorithm_end_time = time.time()
+            end_time = time.time()
+
+            times.append(end_time - start_time)
+            algorithm_times.append(algorithm_end_time - algorithm_start_time)
+            solutions.append(solution)
+            statuses.append(status)
+            
+            if solution:
+                metrics.append(calculate_metrics(puzzle, solution))
+
+            if status == pywraplp.Solver.OPTIMAL or status == pywraplp.Solver.FEASIBLE:
+                if solution and is_solution_valid(puzzle, solution):
+                    if algorithm_end_time - algorithm_start_time < best_algorithm_time:
+                        best_time = end_time - start_time
+                        best_algorithm_time = algorithm_end_time - algorithm_start_time
+                        best_solution = solution
+                else:
+                    print("Invalid Solution")
 
     optimal_solutions = [s for s in solutions if s is not None]
     if optimal_solutions:
         first_solution = optimal_solutions[0]
         all_same = all(s == first_solution for s in optimal_solutions)
 
-        if all_same:
-            print("\nAll solutions are identical.")
-        else:
-            print("\nSolutions differ between runs!")
-    else:
-        print("\nNo optimal solutions found in any run.")
-
     if times:
-        print(f"\n--- Statistics for {puzzle_file} ---")
-        print(f"Number of runs: {num_runs}")
-        print(f"Average time: {statistics.mean(times):.4f} seconds")
-        print(f"Average algorithm time: {statistics.mean(algorithm_times):.4f} seconds")
-        print(f"Median time: {statistics.median(times):.4f} seconds")
-        print(f"Median algorithm time: {statistics.median(algorithm_times):.4f} seconds")
-        print(f"Min time: {min(times):.4f} seconds")
-        print(f"Min algorithm time: {min(algorithm_times):.4f} seconds")
-        print(f"Max time: {max(times):.4f} seconds")
-        print(f"Max algorithm time: {max(algorithm_times):.4f} seconds")
         if len(times) > 1:
             try:
-                print(f"Standard deviation: {statistics.stdev(times):.4f} seconds")
-                print(f"Standard deviation algorithm time: {statistics.stdev(algorithm_times):.4f} seconds")
+                std_dev = statistics.stdev(times)
+                std_dev_algo = statistics.stdev(algorithm_times)
             except statistics.StatisticsError:
-                print("Standard deviation: Not applicable (only one data point)")
+                std_dev = 0
+                std_dev_algo = 0
 
-        return statuses, solutions, times, algorithm_times, best_solution
+    return {
+        'statuses': statuses,
+        'solutions': solutions,
+        'times': times,
+        'algorithm_times': algorithm_times,
+        'best_solution': best_solution,
+        'metrics': metrics
+    }
 
-
-def compare_models(puzzle_files, num_runs=5, ModelClass1=OriginalModel, SolverClass1=OriginalSolver,
-                   ModelClass2=FlowModel, SolverClass2=FlowSolver,
-                   ModelClass3=ModifiedIterativeILP):
-    """Сравнивает три модели на наборе головоломок."""
-    results1 = {}
-    results2 = {}
-    results3 = {}
+def generate_latex_table(results):
+    """Генерирует расширенную LaTeX таблицу с результатами тестирования."""
+    latex_table = """\\begin{table}[h]
+\\centering
+\\caption{Результаты тестирования алгоритмов на различных головоломках}
+\\begin{tabular}{|l|c|c|c|c|c|c|c|}
+\\hline
+\\textbf{Головоломка} & \\textbf{Модель} & \\textbf{Время (с)} & \\textbf{Мосты} & \\textbf{Связность} & \\textbf{Плотность} & \\textbf{Макс. мостов} & \\textbf{Ст. откл. (с)} \\\\
+\\hline
+"""
     
-    print("Testing Model 1 (Original):")
-    for puzzle_file in puzzle_files:
-        print(f"\n--- Testing puzzle: {puzzle_file} ---")
-        statuses, solutions, times, algorithm_times, best_solution = run_test(puzzle_file, num_runs, ModelClass1, SolverClass1)
-        results1[puzzle_file] = {"statuses": statuses, "solutions": solutions, "times": times, "algorithm_times": algorithm_times,
-                                  "best_solution": best_solution}
-        if best_solution:
-            print(f"Visualizing best solution for Model 1, puzzle {puzzle_file}")
-            visualize_solution(puzzle_file, best_solution, title="Original Model")
+    for puzzle_name, models in results.items():
+        for i, (model_name, stats) in enumerate(models.items()):
+            metrics = stats.get('metrics', [{}])
+            avg_metrics = {
+                'bridge_count': statistics.mean([m.get('bridge_count', 0) for m in metrics]),
+                'island_connectivity': statistics.mean([m.get('island_connectivity', 0) for m in metrics]),
+                'solution_density': statistics.mean([m.get('solution_density', 0) for m in metrics]),
+                'max_bridges_per_island': statistics.mean([m.get('max_bridges_per_island', 0) for m in metrics])
+            }
+            
+            if i == 0:
+                latex_table += f"\\multirow{{3}}{{*}}{{{puzzle_name}}} & {model_name} & {stats['avg_time']:.4f} & {avg_metrics['bridge_count']:.1f} & {avg_metrics['island_connectivity']:.2f} & {avg_metrics['solution_density']:.2f} & {avg_metrics['max_bridges_per_island']:.1f} & {stats['std_dev']:.4f} \\\\\n"
         else:
-            print(f"No solution found for Model 1, puzzle {puzzle_file}")
-
-    print("\nTesting Model 2 (Flow):")
-    for puzzle_file in puzzle_files:
-        print(f"\n--- Testing puzzle: {puzzle_file} ---")
-        statuses, solutions, times, algorithm_times, best_solution = run_test(puzzle_file, num_runs, ModelClass2, SolverClass2)
-        results2[puzzle_file] = {"statuses": statuses, "solutions": solutions, "times": times, "algorithm_times": algorithm_times,
-                                  "best_solution": best_solution}
-        if best_solution:
-            print(f"Visualizing best solution for Model 2, puzzle {puzzle_file}")
-            visualize_solution(puzzle_file, best_solution, title="Flow Model")
-        else:
-            print(f"No solution found for Model 2, puzzle {puzzle_file}")
-
-    print("\nTesting Model 3 (Modified Iterative):")
-    for puzzle_file in puzzle_files:
-        print(f"\n--- Testing puzzle: {puzzle_file} ---")
-        times = []
-        algorithm_times = []
-        solutions = []
-        statuses = []
-        best_solution = None
-        best_time = float('inf')
-        best_algorithm_time = float('inf')
-
-        for i in range(num_runs):
-            try:
-                puzzle = Puzzle.from_file(puzzle_file)
-                solver = ModelClass3(puzzle)
-                start_time = time.time()
-                solution = solver.solve()
-                end_time = time.time()
-                
-                times.append(end_time - start_time)
-                algorithm_times.append(end_time - start_time)
-                solutions.append(solution)
-                
-                if solution:
-                    status = pywraplp.Solver.OPTIMAL
-                    if is_solution_valid(puzzle, solution):
-                        if end_time - start_time < best_algorithm_time:
-                            best_time = end_time - start_time
-                            best_algorithm_time = end_time - start_time
-                            best_solution = solution
-                else:
-                    status = pywraplp.Solver.INFEASIBLE
-                
-                statuses.append(status)
-                print(f"Run {i + 1}: Status = {status}, Total Time = {end_time - start_time:.4f} seconds, Algorithm Time = {end_time - start_time:.4f} seconds")
-                
-            except Exception as e:
-                print(f"Error in run {i + 1}: {str(e)}")
-                continue
-
-        results3[puzzle_file] = {
-            "statuses": statuses,
-            "solutions": solutions,
-            "times": times,
-            "algorithm_times": algorithm_times,
-            "best_solution": best_solution
-        }
-        
-        if best_solution:
-            print(f"Visualizing best solution for Model 3, puzzle {puzzle_file}")
-            visualize_solution(puzzle_file, best_solution, title="Modified Iterative Model")
-        else:
-            print(f"No solution found for Model 3, puzzle {puzzle_file}")
-
-        # Выводим статистику для Model 3
-        if times:
-            print(f"\n--- Statistics for Model 3, puzzle {puzzle_file} ---")
-            print(f"Number of runs: {num_runs}")
-            print(f"Average time: {statistics.mean(times):.4f} seconds")
-            print(f"Average algorithm time: {statistics.mean(algorithm_times):.4f} seconds")
-            print(f"Median time: {statistics.median(times):.4f} seconds")
-            print(f"Median algorithm time: {statistics.median(algorithm_times):.4f} seconds")
-            print(f"Min time: {min(times):.4f} seconds")
-            print(f"Min algorithm time: {min(algorithm_times):.4f} seconds")
-            print(f"Max time: {max(times):.4f} seconds")
-            print(f"Max algorithm time: {max(algorithm_times):.4f} seconds")
-            if len(times) > 1:
-                try:
-                    print(f"Standard deviation: {statistics.stdev(times):.4f} seconds")
-                    print(f"Standard deviation algorithm time: {statistics.stdev(algorithm_times):.4f} seconds")
-                except statistics.StatisticsError:
-                    print("Standard deviation: Not applicable (only one data point)")
-
-    print("\n--- Comparison Summary ---")
-    for puzzle_file in puzzle_files:
-        print(f"\nPuzzle: {puzzle_file}")
-        
-        print(f"Model 1 (Original):")
-        if results1[puzzle_file]["times"]:
-            avg_time1 = statistics.mean(results1[puzzle_file]['times'])
-            avg_algorithm_time1 = statistics.mean(results1[puzzle_file]['algorithm_times'])
-            print(f"Average total time: {avg_time1:.4f} seconds")
-            print(f"Average algorithm time: {avg_algorithm_time1:.4f} seconds")
-            num_optimal = sum(1 for status in results1[puzzle_file]["statuses"] if status == 0)
-            print(f"Optimal solutions: {num_optimal}/{num_runs}")
-        else:
-            print("No solutions found.")
-
-        print(f"Model 2 (Flow):")
-        if results2[puzzle_file]["times"]:
-            avg_time2 = statistics.mean(results2[puzzle_file]['times'])
-            avg_algorithm_time2 = statistics.mean(results2[puzzle_file]['algorithm_times'])
-            print(f"Average total time: {avg_time2:.4f} seconds")
-            print(f"Average algorithm time: {avg_algorithm_time2:.4f} seconds")
-            num_optimal = sum(1 for status in results2[puzzle_file]["statuses"] if status == 0)
-            print(f"Optimal solutions: {num_optimal}/{num_runs}")
-        else:
-            print("No solutions found.")
-
-        print(f"Model 3 (Modified Iterative):")
-        if results3[puzzle_file]["times"]:
-            avg_time3 = statistics.mean(results3[puzzle_file]['times'])
-            avg_algorithm_time3 = statistics.mean(results3[puzzle_file]['algorithm_times'])
-            print(f"Average total time: {avg_time3:.4f} seconds")
-            print(f"Average algorithm time: {avg_algorithm_time3:.4f} seconds")
-            num_optimal = sum(1 for status in results3[puzzle_file]["statuses"] if status == 0)
-            print(f"Optimal solutions: {num_optimal}/{num_runs}")
-        else:
-            print("No solutions found.")
-
+                latex_table += f" & {model_name} & {stats['avg_time']:.4f} & {avg_metrics['bridge_count']:.1f} & {avg_metrics['island_connectivity']:.2f} & {avg_metrics['solution_density']:.2f} & {avg_metrics['max_bridges_per_island']:.1f} & {stats['std_dev']:.4f} \\\\\n"
+        latex_table += "\\hline\n"
+    
+    latex_table += """\\end{tabular}
+\\end{table}"""
+    
+    return latex_table
 
 def visualize_solution(puzzle_file, solution, title="Hashiwokakero Solution"):
     """Визуализирует решение головоломки."""
-    puzzle = Puzzle.from_file(puzzle_file) #  puzzle_file должен быть полным путем к файлу.
+    puzzle = Puzzle.from_file(puzzle_file)
     islands = puzzle.get_all_islands()
     max_x = max(island['x'] for island in islands) + 1
     max_y = max(island['y'] for island in islands) + 1
@@ -286,10 +257,10 @@ def visualize_solution(puzzle_file, solution, title="Hashiwokakero Solution"):
     # Настраиваем график
     ax.set_xlim(-1, max_x)
     ax.set_ylim(-1, max_y)
-    ax.invert_yaxis()  # Инвертируем ось Y
+    ax.invert_yaxis()
     ax.set_aspect('equal')
     ax.axis('off')
-    plt.title(title)  # Используем передаваемый заголовок
+    plt.title(title)
     plt.show()
 
 def is_solution_valid(puzzle, solution):
@@ -306,14 +277,117 @@ def is_solution_valid(puzzle, solution):
                 bridges_count += bridges
 
         if bridges_count != degree:
-            return False  # Если количество мостов не совпадает с требуемой степенью, решение неверное
+            return False
 
-    return True  # Если все острова имеют правильное количество мостов, решение верное
+    return True
+
+def get_best_model_for_puzzle(puzzle_results):
+    """Определяет лучшую модель для конкретной головоломки."""
+    best_model = None
+    best_time = float('inf')
+    
+    for model_name, stats in puzzle_results.items():
+        if stats['avg_time'] < best_time:
+            best_time = stats['avg_time']
+            best_model = model_name
+    
+    return best_model, best_time
+
+def print_summary(results, folder_name):
+    """Выводит общую сводку результатов тестирования и сохраняет её в файл."""
+    summary = []
+    summary.append("="*80)
+    summary.append("ОБЩАЯ СВОДКА РЕЗУЛЬТАТОВ")
+    summary.append("="*80)
+    
+    # Счетчики для каждой модели
+    model_wins = {'Original': 0, 'Flow': 0, 'Modified': 0}
+    total_puzzles = len(results)
+    
+    summary.append("\nЛучшие результаты по головоломкам:")
+    summary.append("-"*80)
+    
+    for puzzle_name, puzzle_results in results.items():
+        best_model, best_time = get_best_model_for_puzzle(puzzle_results)
+        model_wins[best_model] += 1
+        
+        summary.append(f"\n{puzzle_name}:")
+        summary.append(f"  Лучшая модель: {best_model} (время: {best_time:.4f} сек)")
+        summary.append("  Результаты всех моделей:")
+        for model_name, stats in puzzle_results.items():
+            summary.append(f"    {model_name}: {stats['avg_time']:.4f} сек")
+    
+    summary.append("\n" + "="*80)
+    summary.append("ИТОГОВАЯ СТАТИСТИКА")
+    summary.append("="*80)
+    summary.append(f"Всего протестировано головоломок: {total_puzzles}")
+    summary.append("\nКоличество побед каждой модели:")
+    for model, wins in model_wins.items():
+        percentage = (wins / total_puzzles) * 100
+        summary.append(f"  {model}: {wins} побед ({percentage:.1f}%)")
+    
+    # Выводим в консоль
+    print("\n".join(summary))
+    
+    # Сохраняем в файл
+    summary_file = f'summary_{folder_name}.txt'
+    with open(summary_file, 'w', encoding='utf-8') as f:
+        f.write("\n".join(summary))
+    
+    return summary_file
 
 if __name__ == '__main__':
-    # Находим все файлы .has в папке try
-    folder_path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'try')  # Путь к папке 'try'
-    puzzle_files = glob.glob(os.path.join(folder_path, 'Hs_20_20_40_30_552.has'))  # Находим все файлы .has
-
-    # Сравниваем три модели на всех найденных файлах
-    compare_models(puzzle_files, num_runs=3)
+    # Выбор папки с головоломками
+    folder_path = select_puzzle_folder()
+    folder_name = os.path.basename(folder_path)
+    
+    # Ищем все .has и .txt файлы, включая подпапки
+    puzzle_files = []
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            if file.endswith(('.has', '.txt')):
+                puzzle_files.append(os.path.join(root, file))
+    
+    results = {}
+    
+    print(f"\nРезультаты тестирования алгоритмов для папки: {folder_name}")
+    print("=" * 80)
+    
+    for puzzle_file in puzzle_files:
+        puzzle_name = os.path.basename(puzzle_file)
+        results[puzzle_name] = {}
+        
+        print(f"\nТестирование головоломки: {puzzle_name}")
+        print("-" * 50)
+        
+        # Тестируем все три модели
+        models = [
+            ('Original', OriginalModel, OriginalSolver),
+            ('Flow', FlowModel, FlowSolver),
+            ('Modified', ModifiedIterativeILP, None)
+        ]
+        
+        for model_name, ModelClass, SolverClass in models:
+            stats = run_test(puzzle_file, num_runs=2, ModelClass=ModelClass, SolverClass=SolverClass)
+            
+            if stats['times']:
+                results[puzzle_name][model_name] = {
+                    'avg_time': statistics.mean(stats['times']),
+                    'avg_algo_time': statistics.mean(stats['algorithm_times']),
+                    'std_dev': statistics.stdev(stats['times']) if len(stats['times']) > 1 else 0,
+                    'metrics': stats['metrics']
+                }
+    
+    # Выводим общую сводку результатов и сохраняем в файл
+    summary_file = print_summary(results, folder_name)
+    
+    # Генерируем и сохраняем LaTeX таблицу
+    latex_table = generate_latex_table(results)
+    latex_file = f'results_{folder_name}.tex'
+    with open(latex_file, 'w', encoding='utf-8') as f:
+        f.write(latex_table)
+    
+    print(f"\nТестирование завершено.")
+    print(f"Результаты сохранены в файлы:")
+    print(f"- {latex_file} (LaTeX таблица)")
+    print(f"- {summary_file} (Общая сводка)")
