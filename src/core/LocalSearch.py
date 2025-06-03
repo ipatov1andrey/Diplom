@@ -18,6 +18,7 @@ class LocalSearch:
         self._neighbors_cache = self._precompute_neighbors()
         self._possible_bridges = self._precompute_possible_bridges()
         self._bridge_priorities = self._compute_bridge_priorities()
+        self.current_solution = None  # Добавляем инициализацию current_solution
 
     def _initialize_graph(self):
         """Инициализирует граф с островами."""
@@ -122,78 +123,74 @@ class LocalSearch:
         return priorities
 
     def local_search(self, solution, fixed_bridges=None, broken_islands=None):
-        """Реализует алгоритм локального поиска."""
-        if fixed_bridges is None:
-            fixed_bridges = set()
-        if broken_islands is None:
-            broken_islands = set()
+        """Выполняет локальный поиск для улучшения решения."""
+        try:
+            if not solution:
+                return None
 
-        # Инициализируем граф из решения
-        self.graph = self.build_graph_from_solution(solution)
-        
-        while True:
-            # Находим компоненты связности
+            self.current_solution = solution.copy()  # Сохраняем текущее решение
+            self.graph = self.build_graph_from_solution(solution)
+            if not self.graph or not self.graph.nodes():
+                return None
+
+            # Преобразуем генератор в список
             components = list(nx.connected_components(self.graph))
             
-            # Случайная перестановка островов
-            islands = list(self.graph.nodes())
-            random.shuffle(islands)
+            if not components:
+                return None
+
+            if len(components) == 1:
+                return solution
+
+            # Если есть несколько компонент, пытаемся их соединить
+            max_attempts = 100  # Ограничиваем количество попыток
+            attempts = 0
             
-            for v in islands:
-                broken_islands = set()
-                fixed_bridges = set()
-                
-                # Ищем остров в другой компоненте для соединения
-                v_component = next(c for c in components if v in c)
-                for u in islands:
-                    if u not in v_component and self._can_add_bridge(v, u):
-                        # Добавляем мост
-                        self.graph.add_edge(v, u)
-                        fixed_bridges.add((min(v, u), max(v, u)))
-                        broken_islands.update([v, u])
+            while len(components) > 1 and attempts < max_attempts:
+                attempts += 1
+                for i in range(len(components)):
+                    for j in range(i + 1, len(components)):
+                        if self.try_connect_components(components[i], components[j], fixed_bridges, broken_islands):
+                            # Если удалось соединить компоненты, обновляем граф и пробуем снова
+                            self.graph = self.build_graph_from_solution(self.current_solution)
+                            components = list(nx.connected_components(self.graph))
+                            if len(components) == 1:
+                                return self.current_solution
+                            break
+                    if len(components) == 1:
                         break
-                
-                # Исправляем сломанные острова
-                while broken_islands:
-                    w = broken_islands.pop()
-                    w_degree = self._island_degrees[w]
-                    current_degree = self.graph.degree(w)
-                    
-                    if current_degree > w_degree:
-                        # Удаляем случайный мост, кроме зафиксированных
-                        incident_edges = list(self.graph.edges(w))
-                        available_edges = [e for e in incident_edges if (min(e), max(e)) not in fixed_bridges]
-                        if available_edges:
-                            edge_to_remove = random.choice(available_edges)
-                            self.graph.remove_edge(*edge_to_remove)
-                            broken_islands.update(edge_to_remove)
-                    else:
-                        # Пытаемся добавить мост
-                        for u in islands:
-                            if u != w and self._can_add_bridge(w, u) and (min(w, u), max(w, u)) not in fixed_bridges:
-                                self.graph.add_edge(w, u)
-                                fixed_bridges.add((min(w, u), max(w, u)))
-                                broken_islands.add(u)
-                                break
-                
-                # Проверяем решение
-                if self.is_solution_valid():
-                    return self.extract_solution()
-                
-                # Проверяем число компонент
-                new_components = list(nx.connected_components(self.graph))
-                if len(new_components) < len(components):
-                    # Сбрасываем цикл
-                    break
-                
-                # Откатываем изменения
-                self.graph = self.build_graph_from_solution(solution)
-            
-            # Если все острова проверены и улучшений нет
-            if len(components) == len(nx.connected_components(self.graph)):
-                break
-        
-        return None
+
+            return self.current_solution
+
+        except Exception as e:
+            print(f"Error in local_search: {str(e)}")
+            return None
+
+    def try_connect_components(self, comp1, comp2, fixed_bridges=None, broken_islands=None):
+        """Пытается соединить две компоненты связности."""
+        try:
+            if not comp1 or not comp2:
+                return False
+
+            # Находим все возможные мосты между компонентами
+            possible_bridges = []
+            for island1 in comp1:
+                for island2 in comp2:
+                    if self._can_add_bridge(island1, island2):  # Используем существующий метод _can_add_bridge
+                        possible_bridges.append((island1, island2))
+
+            if not possible_bridges:
+                return False
+
+            # Выбираем случайный мост и добавляем его
+            bridge = random.choice(possible_bridges)
+            self.graph.add_edge(bridge[0], bridge[1], weight=1)
+            self.current_solution[(min(bridge[0], bridge[1]), max(bridge[0], bridge[1]))] = 1
+            return True
+
+        except Exception as e:
+            print(f"Error in try_connect_components: {str(e)}")
+            return False
 
     def build_graph_from_solution(self, solution):
         """Создает граф NetworkX на основе решения."""
@@ -343,3 +340,26 @@ class LocalSearch:
                     return False
                     
         return len(broken_islands) == 0
+
+    def add_cut_constraint_to_model(self, component):
+        """Добавляет ограничение разреза для компонента."""
+        try:
+            if not component:
+                return False
+
+            # Создаем ограничение для компонента
+            constraint = self.solver.Constraint(0, float('inf'))
+            
+            # Добавляем переменные мостов, соединяющих компонент с остальным графом
+            for island1 in component:
+                for island2 in self._possible_bridges:
+                    if island2 not in component:
+                        if (island1, island2) in self.bridge_vars:
+                            constraint.SetCoefficient(self.bridge_vars[(island1, island2)], 1)
+                        if (island2, island1) in self.bridge_vars:
+                            constraint.SetCoefficient(self.bridge_vars[(island2, island1)], 1)
+            
+            return True
+        except Exception as e:
+            print(f"Error adding cut constraint: {e}")
+            return False

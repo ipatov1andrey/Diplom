@@ -64,6 +64,7 @@ class ModifiedIterativeILP:
         """Добавляет ограничения разрезов для каждой компоненты связности."""
         try:
             graph = self.build_graph_from_solution()
+            # Преобразуем генератор в список
             components = list(nx.connected_components(graph))
             
             if not components:
@@ -71,46 +72,31 @@ class ModifiedIterativeILP:
                 
             # Добавляем ограничения для каждой компоненты
             for component in components:
-                self.add_cut_constraint_to_model(component)
+                if len(component) > 0:  # Проверяем, что компонента не пустая
+                    self.add_cut_constraint_to_model(component)
                     
         except Exception as e:
             print(f"Error in add_cut_constraints: {str(e)}")
             return
 
     def add_cut_constraint_to_model(self, component):
-        """Добавляет ограничение разреза в модель ЦЛП."""
+        """Добавляет ограничение разреза для компонента."""
         try:
-            islands = self.puzzle.get_all_islands()
-            S = set(component)
-            V_minus_S = [v['id'] for v in islands if v['id'] not in S]
+            if not component:
+                return False
+
+            # Создаем ограничение для компонента
+            constraint = self.model.solver.Add(sum(
+                self.model.single_bridge[min(i, j), max(i, j)] + 2 * self.model.double_bridge[min(i, j), max(i, j)]
+                for i in component
+                for j in range(len(self.puzzle.get_all_islands()))
+                if j not in component and (min(i, j), max(i, j)) in self.model.single_bridge
+            ) >= 1)
             
-            if not V_minus_S:
-                return
-                
-            # Создаем ограничение: сумма (single_bridge + double_bridge) >= 1
-            constraint_terms = []
-            for i in S:
-                for j in V_minus_S:
-                    bridge_key = (min(i, j), max(i, j))
-                    if bridge_key in self._possible_bridges and bridge_key not in self.fixed_bridges:
-                        try:
-                            if bridge_key in self.model.single_bridge and bridge_key in self.model.double_bridge:
-                                term = (self.model.single_bridge[bridge_key] + 
-                                       self.model.double_bridge[bridge_key])
-                                constraint_terms.append(term)
-                        except (KeyError, AttributeError):
-                            continue
-            
-            if not constraint_terms:
-                return
-                
-            constraint_expression = sum(constraint_terms)
-            constraint = self.model.solver.Add(constraint_expression >= 1)
-            self.cut_constraints.append(constraint)
-            
+            return True
         except Exception as e:
-            print(f"Error in add_cut_constraint_to_model: {str(e)}")
-            raise
+            print(f"Error adding cut constraint: {e}")
+            return False
 
     def is_connected(self):
         """Проверяет, является ли текущее решение связным."""

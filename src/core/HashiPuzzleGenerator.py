@@ -44,17 +44,54 @@ class HashiPuzzleGenerator:
 
     def place_islands(self):
         """Размещает острова на сетке."""
-
-        # Размещаем первый остров в случайной позиции
-        x = random.randint(0, self.d1 - 1)
-        y = random.randint(0, self.d2 - 1)
+        max_attempts = 1000000  # Уменьшаем количество попыток, но делаем алгоритм умнее
+        attempts = 0
+        
+        # Размещаем первый остров в центре
+        x = self.d1 // 2
+        y = self.d2 // 2
         island_id = self.create_island(x, y)
 
-        # Размещаем остальные острова и соединяем их с существующими
-        for _ in range(self.n - 1):
-            existing_island_id = random.choice(self.islands)
-            direction = random.choice(['top', 'bottom', 'left', 'right'])
-            self.add_island_and_edge(existing_island_id, direction)
+        # Создаем сетку для отслеживания доступных позиций
+        available_positions = set()
+        for i in range(2, self.d1-2, 2):
+            for j in range(2, self.d2-2, 2):
+                available_positions.add((i, j))
+
+        # Размещаем остальные острова
+        while len(self.islands) < self.n and attempts < max_attempts:
+            attempts += 1
+            
+            if not available_positions:
+                    break
+            
+            # Выбираем случайную доступную позицию
+            x, y = random.choice(list(available_positions))
+            available_positions.remove((x, y))
+                
+                # Проверяем, можно ли добавить остров
+                if self.is_valid_position(x, y):
+                    new_island_id = self.create_island(x, y)
+                    
+                    # Пытаемся соединить с ближайшими существующими островами
+                    connected = False
+                    for existing_id in self.islands:
+                        if existing_id != new_island_id:
+                        ex_x, ex_y = self.get_island_coordinates(existing_id)
+                        if self.can_connect(x, y, ex_x, ex_y):
+                                self.edges[tuple(sorted((new_island_id, existing_id)))] = 1
+                                connected = True
+                                break
+                    
+                    # Если не удалось соединить, удаляем остров
+                    if not connected:
+                        self.grid[y][x] = None
+                        self.islands.remove(new_island_id)
+                        self.next_island_id -= 1
+                    available_positions.add((x, y))
+
+        if len(self.islands) < self.n:
+            print(f"Предупреждение: Удалось создать только {len(self.islands)} островов из {self.n}")
 
     def create_island(self, x, y):
         """Создаёт остров в заданной позиции."""
@@ -66,15 +103,31 @@ class HashiPuzzleGenerator:
 
     def add_island_and_edge(self, existing_island_id, direction):
         """Добавляет новый остров и соединяет его с существующим."""
-
         existing_island_x, existing_island_y = self.get_island_coordinates(existing_island_id)
         new_x, new_y = self.find_new_island_position(existing_island_x, existing_island_y, direction)
 
         if new_x is not None and new_y is not None:
-            new_island_id = self.create_island(new_x, new_y)
+            # Проверяем, что вокруг нового острова достаточно свободного места
+            if self.is_valid_position(new_x, new_y):
+                new_island_id = self.create_island(new_x, new_y)
+                # Создаем ребро между островами
+                self.edges[tuple(sorted((existing_island_id, new_island_id)))] = 1
+                return True
+        return False
 
-            # Создаем ребро между островами
-            self.edges[tuple(sorted((existing_island_id, new_island_id)))] = 1  # 1 мост
+    def is_valid_position(self, x, y):
+        """Проверяет, что позиция подходит для размещения острова."""
+        # Проверяем, что клетка свободна
+        if self.grid[y][x] is not None:
+            return False
+            
+        # Проверяем только соседние клетки по диагонали
+        for dx, dy in [(1, 1), (1, -1), (-1, 1), (-1, -1)]:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < self.d1 and 0 <= ny < self.d2:
+                if self.grid[ny][nx] is not None:
+                    return False
+        return True
 
     def get_island_coordinates(self, island_id):
         """Возвращает координаты острова по его ID."""
@@ -105,43 +158,40 @@ class HashiPuzzleGenerator:
 
         # Проверяем, не пересекаем ли существующие острова или ребра
         if direction in ['top', 'bottom']:
-            if not y_range:  # y_range пустой
-                return None, None  # Нет места в этом направлении
+            if not y_range:
+                return None, None
 
+            # Пробуем найти ближайшую свободную позицию
             for new_y in y_range:
-                if self.grid[new_y][x_val] is not None: #Клетка занята
-                    return None, None
-
-            new_y = y_range[-1] if direction == "top" else y_range[0]  #Если нет препятствий, выбираем крайнюю клетку
-            return x_val, new_y
-
+                if self.grid[new_y][x_val] is not None:
+                    continue
+                if self.is_valid_position(x_val, new_y):
+                    return x_val, new_y
 
         elif direction in ['left', 'right']:
-            if not x_range:  # x_range пустой
-                return None, None  # Нет места в этом направлении
+            if not x_range:
+                return None, None
 
+            # Пробуем найти ближайшую свободную позицию
             for new_x in x_range:
-                if self.grid[y_val][new_x] is not None: #Клетка занята
-                    return None, None
+                if self.grid[y_val][new_x] is not None:
+                    continue
+                if self.is_valid_position(new_x, y_val):
+                    return new_x, y_val
 
-            new_x = x_range[-1] if direction == "left" else x_range[0]  #Если нет препятствий, выбираем крайнюю клетку
-            return new_x, y_val
-
-
-        return None, None  # Не удалось найти позицию
+        return None, None
 
     def create_cycles(self):
         """Создает циклы, добавляя ребра."""
-        num_cycles = int(self.alpha * self.n)
+        num_cycles = int(self.alpha * self.n * 2)  # Увеличиваем количество циклов
         for _ in range(num_cycles):
-            island1_id, island2_id = random.sample(self.islands, 2)  # Выбираем 2 случайных острова
-            if tuple(sorted((island1_id, island2_id))) not in self.edges:  # Проверяем, что ребра нет
+            island1_id, island2_id = random.sample(self.islands, 2)
+            if tuple(sorted((island1_id, island2_id))) not in self.edges:
                 x1, y1 = self.get_island_coordinates(island1_id)
                 x2, y2 = self.get_island_coordinates(island2_id)
 
-                # Проверяем, что острова можно соединить (горизонтально/вертикально, без пересечений)
-                if self.can_connect(x1,y1,x2,y2):
-                    self.edges[tuple(sorted((island1_id, island2_id)))] = 1  # 1 мост
+                if self.can_connect(x1, y1, x2, y2):
+                    self.edges[tuple(sorted((island1_id, island2_id)))] = 1
 
     def can_connect(self, x1, y1, x2, y2):
         """Проверяет, можно ли соединить два острова."""
