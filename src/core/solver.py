@@ -12,7 +12,7 @@ class Solver:
         self.model = model
         self.solver = model.get_solver()
         self.single_bridge, self.double_bridge = model.get_variables()
-        self.max_iterations = 100
+        self.max_iterations = 200
 
     def solve(self):
         """Решает головоломку и возвращает решение."""
@@ -73,41 +73,30 @@ class Solver:
         return True  # Если все острова имеют правильное количество мостов, решение верное
 
     def solve_with_cuts(self):
-        """Решает головоломку с итеративным добавлением ограничений разрезов."""
-        start_time = time.time()  # Засекаем время здесь!
-        iteration_count = 0  # Добавляем счетчик итераций
-
+        """Решает головоломку с итеративным добавлением ограничений разрезов. Возвращает (status, solution, iteration_count)."""
+        start_time = time.time()
+        iteration_count = 0
         for i in range(self.max_iterations):
-            iteration_count += 1  # Увеличиваем счетчик
+            iteration_count += 1
             logging.info(f"Starting iteration {iteration_count}...")
-
             status, solution = self.solve()
-
             if status == pywraplp.Solver.OPTIMAL or status == pywraplp.Solver.FEASIBLE:
-                # Проверяем валидность решения
                 if not self.is_solution_valid(solution):
                     logging.warning("Solution is invalid: Incorrect bridge count for some islands.")
-                    continue  # Переходим к следующей итерации
-
+                    continue
                 components = self.find_connected_components(solution)
-
-                # Если только одна компонента связности, решение найдено
                 if len(components) == 1:
                     logging.info(f"Solution found with 1 connected component in {iteration_count} iterations.")
-                    end_time = time.time()  # Засекаем время здесь!
+                    end_time = time.time()
                     logging.info(f"Problem solved in {end_time - start_time:.3f} seconds")
-                    return status, solution
-
-                # Добавляем отсечения для каждой компоненты, кроме самой большой.
-                # Сортируем компоненты, чтобы сначала добавлять отсечения для наименьших компонент
+                    return status, solution, iteration_count
                 components.sort(key=len, reverse=True)
-                for component in components[1:]:  # Пропускаем самую большую компоненту
+                for component in components[1:]:
                     self.model.add_cut(component)
                     logging.info(f"Cut added for component: {component}")
             else:
                 logging.warning("No solution found in the current iteration.")
                 logging.info("Maximum iterations reached. No solution found.")
-                return status, None
-
+                return status, None, iteration_count
         logging.warning("Maximum iterations reached. No solution found.")
-        return status, None  # Возвращаем None, если решение не найдено
+        return status, None, iteration_count

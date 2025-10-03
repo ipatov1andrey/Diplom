@@ -1,0 +1,99 @@
+================================================================================
+ОБЩАЯ СТАТИСТИКА ПО ПАПКЕ: 16x16_80_50
+================================================================================
+Модель: Original
+  Количество запусков: 30
+  Успешных решений: 30 (100.0%)
+  Среднее время: 0.1232 сек
+  Медиана времени: 0.1065 сек
+  Мин/Макс время: 0.0869 / 0.2647 сек
+  Ст. отклонение времени: 0.0433
+  Среднее число итераций: -
+  Среднее время алгоритма: 0.0486 сек
+  Avg_bridge_count: 120.0000
+  Avg_island_connectivity: 1.0000
+  Avg_solution_density: 0.0380
+  Avg_max_bridges_per_island: 7.7333
+  Avg_avg_shortest_path: 9.9199
+  Avg_density: 0.0256
+  Avg_degree_1_count: 15.3667
+  Avg_degree_2_count: 20.7000
+  Avg_degree_3_count: 17.5667
+  Avg_degree_4_count: 13.1333
+  Avg_degree_5_count: 5.8333
+  Avg_degree_6_count: 4.5333
+  Avg_degree_7_count: 1.3000
+  Avg_degree_8_count: 1.5667
+  Avg_double_bridge_percent: 48.4928
+  Avg_num_cycles: 1.8333
+  Avg_min_cycle_len: 4.8000
+  Avg_max_cycle_len: 8.6000
+  Avg_avg_clustering: 0.0000
+  Avg_symmetry: 0.1583
+  Avg_iterations: 1.7667
+------------------------------------------------------------
+Модель: Flow
+  Количество запусков: 30
+  Успешных решений: 30 (100.0%)
+  Среднее время: 0.2227 сек
+  Медиана времени: 0.1221 сек
+  Мин/Макс время: 0.1079 / 3.0555 сек
+  Ст. отклонение времени: 0.5352
+  Среднее число итераций: не рассчитывается
+  Среднее время алгоритма: 0.1369 сек
+  Avg_bridge_count: 120.0000
+  Avg_island_connectivity: 1.0000
+  Avg_solution_density: 0.0380
+  Avg_max_bridges_per_island: 7.7333
+  Avg_avg_shortest_path: 9.7279
+  Avg_density: 0.0258
+  Avg_degree_1_count: 15.3667
+  Avg_degree_2_count: 20.7000
+  Avg_degree_3_count: 17.5667
+  Avg_degree_4_count: 13.1333
+  Avg_degree_5_count: 5.8333
+  Avg_degree_6_count: 4.5333
+  Avg_degree_7_count: 1.3000
+  Avg_degree_8_count: 1.5667
+  Avg_double_bridge_percent: 47.3173
+  Avg_num_cycles: 2.5000
+  Avg_min_cycle_len: 4.8333
+  Avg_max_cycle_len: 9.2667
+  Avg_avg_clustering: 0.0000
+  Avg_symmetry: 0.1583
+  Avg_iterations: nan
+------------------------------------------------------------
+Модель: Modified
+  Количество запусков: 30
+  Успешных решений: 30 (100.0%)
+  Среднее время: 0.1430 сек
+  Медиана времени: 0.1120 сек
+  Мин/Макс время: 0.0789 / 0.4927 сек
+  Ст. отклонение времени: 0.0859
+  Среднее число итераций: -
+  Среднее время алгоритма: 0.0422 сек
+  Avg_bridge_count: 120.0000
+  Avg_island_connectivity: 1.0000
+  Avg_solution_density: 0.0380
+  Avg_max_bridges_per_island: 7.7333
+  Avg_avg_shortest_path: 9.8185
+  Avg_density: 0.0256
+  Avg_degree_1_count: 15.3667
+  Avg_degree_2_count: 20.7000
+  Avg_degree_3_count: 17.5667
+  Avg_degree_4_count: 13.1333
+  Avg_degree_5_count: 5.8333
+  Avg_degree_6_count: 4.5333
+  Avg_degree_7_count: 1.3000
+  Avg_degree_8_count: 1.5667
+  Avg_double_bridge_percent: 48.2488
+  Avg_num_cycles: 1.9667
+  Avg_min_cycle_len: 5.1333
+  Avg_max_cycle_len: 8.9667
+  Avg_avg_clustering: 0.0000
+  Avg_symmetry: 0.1583
+  Avg_iterations: 2.0333
+------------------------------------------------------------
+================================================================================
+ЛУЧШАЯ МОДЕЛЬ ПО СРЕДНЕМУ ВРЕМЕНИ АЛГОРИТМА (100% успешных решений): Modified (0.0422 сек)
+================================================================================

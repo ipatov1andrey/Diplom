@@ -123,74 +123,166 @@ class LocalSearch:
         return priorities
 
     def local_search(self, solution, fixed_bridges=None, broken_islands=None):
-        """Выполняет локальный поиск для улучшения решения."""
-        try:
-            if not solution:
-                return None
+        """Выполняет локальный поиск для улучшения решения согласно Алгоритму 2."""
+        if not solution:
+            return None
 
-            self.current_solution = solution.copy()  # Сохраняем текущее решение
-            self.graph = self.build_graph_from_solution(solution)
-            if not self.graph or not self.graph.nodes():
-                return None
+        self.current_solution = solution.copy()
+        self.graph = self.build_graph_from_solution(solution)
+        if not self.graph or not self.graph.nodes():
+            return None
 
-            # Преобразуем генератор в список
-            components = list(nx.connected_components(self.graph))
-            
-            if not components:
-                return None
+        # Получаем список всех островов
+        all_islands = list(self.graph.nodes())
 
-            if len(components) == 1:
-                return solution
+        while True:  # Основной цикл repeat-until
+            # Находим компоненты связности
+            components = list(nx.connected_components(self.graph)) # Ensure components is a list
+            num_components_before = len(components)
+            if num_components_before == 1:
+                return self.current_solution
 
-            # Если есть несколько компонент, пытаемся их соединить
-            max_attempts = 100  # Ограничиваем количество попыток
-            attempts = 0
-            
-            while len(components) > 1 and attempts < max_attempts:
-                attempts += 1
-                for i in range(len(components)):
-                    for j in range(i + 1, len(components)):
-                        if self.try_connect_components(components[i], components[j], fixed_bridges, broken_islands):
-                            # Если удалось соединить компоненты, обновляем граф и пробуем снова
-                            self.graph = self.build_graph_from_solution(self.current_solution)
-                            components = list(nx.connected_components(self.graph))
-                            if len(components) == 1:
-                                return self.current_solution
+            # Перемешиваем острова для случайного порядка
+            random.shuffle(all_islands)
+
+            found_improvement_in_for_loop = False # Флаг для сброса цикла for
+
+            for v in all_islands:  # Для каждого острова v в порядке перестановки
+                # Инициализируем множества для фиксированных мостов и сломанных островов для каждой попытки с v
+                fixed_bridges = set()
+                broken_islands = set()
+                added_bridge = None # Переменная для хранения добавленного моста (u, v)
+
+                # Находим компоненту, содержащую v
+                v_component = next(comp for comp in components if v in comp)
+
+                # Ищем острова в других компонентах
+                other_components = [comp for comp in components if comp != v_component]
+
+                # Пытаемся найти подходящий остров u в другой компоненте
+                bridge_found_between_components = False
+                for other_comp in other_components:
+                    for u in other_comp:
+                        if self._can_add_bridge_fast(u, v):
+                            # Добавляем мост между u и v
+                            self.graph.add_edge(u, v, weight=1)
+                            bridge_key = (min(u, v), max(u, v))
+                            self.current_solution[bridge_key] = self.current_solution.get(bridge_key, 0) + 1 # Increment bridge count
+                            added_bridge = (u, v)
+
+                            # Обновляем множества
+                            fixed_bridges.add(bridge_key)
+                            broken_islands.update([u, v])
+
+                            bridge_found_between_components = True
+                            break # Выходим из внутренних циклов после добавления моста
+                    if bridge_found_between_components:
                             break
-                    if len(components) == 1:
+
+                # Если мост между компонентами добавлен, пытаемся починить
+                if added_bridge:
+                    # Передаем лимит попыток ремонта
+                    repair_successful = self._repair_broken_islands(broken_islands, fixed_bridges, list(self.graph.nodes()), max_repair_attempts=150)
+
+                    # Проверка после цикла while brokenIslands
+                    if self.is_solution_valid():
+                        return self.current_solution # Найдено решение головоломки
+
+                    # Проверяем, уменьшилось ли число компонент
+                    new_components = list(nx.connected_components(self.graph))
+                    num_components_after = len(new_components)
+
+                    if num_components_after < num_components_before:
+                        # Число компонент уменьшилось, сбрасываем цикл for и возвращаемся в repeat
+                        found_improvement_in_for_loop = True
+                        break # Выход из цикла for v
+                    elif not repair_successful: # Если ремонт не удался и нет улучшения компонент
+                        # Откатываем изменения
+                        self._rollback_changes(added_bridge[0], added_bridge[1])
+                        pass # Просто продолжаем цикл for
+                    else:
+                        # Число компонент не уменьшилось, но ремонт был успешным (попытки не кончились)
+                        # Откатываем изменения
+                        self._rollback_changes(added_bridge[0], added_bridge[1])
+                        pass # Просто продолжаем цикл for
+
+            # Если не нашли улучшений (уменьшения числа компонент) после проверки всех островов, выходим из repeat
+            if not found_improvement_in_for_loop:
                         break
 
             return self.current_solution
 
-        except Exception as e:
-            print(f"Error in local_search: {str(e)}")
-            return None
+    def _repair_broken_islands(self, broken_islands, fixed_bridges, all_islands, max_repair_attempts=150):
+        """Ремонтирует сломанные острова согласно алгоритму."""
+        repair_attempts = 0
+        while broken_islands and repair_attempts < max_repair_attempts:
+            repair_attempts += 1
+            # Выбираем сломанный остров w
+            w = broken_islands.pop()
+            
+            # Получаем текущую степень острова
+            current_degree = sum(data.get('weight', 1) for _, _, data in self.graph.edges(w, data=True))
+            target_degree = self._island_degrees.get(w, 0)
+            
+            if current_degree > target_degree:
+                # Если степень больше требуемой, удаляем случайный мост
+                removable_edges = [
+                    (edge, self._bridge_priorities.get((min(edge[0], edge[1]), max(edge[0], edge[1])), 0))
+                    for edge in list(self.graph.edges(w, data=True))
+                    if (min(edge[0], edge[1]), max(edge[0], edge[1])) not in fixed_bridges
+                ]
+                
+                if not removable_edges:
+                    return False
 
-    def try_connect_components(self, comp1, comp2, fixed_bridges=None, broken_islands=None):
-        """Пытается соединить две компоненты связности."""
-        try:
-            if not comp1 or not comp2:
-                return False
+                # Выбираем мост с наименьшим приоритетом
+                edge_to_remove = min(removable_edges, key=lambda x: x[1])[0]
+                if self.graph.has_edge(edge_to_remove[0], edge_to_remove[1]):
+                    self.graph.remove_edge(edge_to_remove[0], edge_to_remove[1])
+                bridge_key = (min(edge_to_remove[0], edge_to_remove[1]),
+                              max(edge_to_remove[0], edge_to_remove[1]))
+                if bridge_key in self.current_solution:
+                    del self.current_solution[bridge_key]
+                
+                # Добавляем соседний остров в список сломанных
+                other_island = edge_to_remove[1] if edge_to_remove[0] == w else edge_to_remove[0]
+                broken_islands.add(other_island)
+                
+            elif current_degree < target_degree:
+                # Если степень меньше требуемой, пытаемся добавить мост
+                best_bridge = None
+                best_priority = -1
+                
+                for other in list(all_islands):
+                    if other != w and not self.graph.has_edge(w, other):
+                        bridge = (min(w, other), max(w, other))
+                        if bridge in self._possible_bridges and bridge not in fixed_bridges:
+                            if not self._has_intersections_fast(
+                                self._island_positions[w],
+                                self._island_positions[other]
+                            ):
+                                priority = self._bridge_priorities.get(bridge, 0)
+                                if priority > best_priority:
+                                    best_priority = priority
+                                    best_bridge = (other, bridge)
+                
+                if best_bridge:
+                    other, bridge = best_bridge
+                    self.graph.add_edge(w, other, weight=1)
+                    self.current_solution[bridge] = 1
+                    broken_islands.add(other)
+                else:
+                    return False
 
-            # Находим все возможные мосты между компонентами
-            possible_bridges = []
-            for island1 in comp1:
-                for island2 in comp2:
-                    if self._can_add_bridge(island1, island2):  # Используем существующий метод _can_add_bridge
-                        possible_bridges.append((island1, island2))
-
-            if not possible_bridges:
-                return False
-
-            # Выбираем случайный мост и добавляем его
-            bridge = random.choice(possible_bridges)
-            self.graph.add_edge(bridge[0], bridge[1], weight=1)
-            self.current_solution[(min(bridge[0], bridge[1]), max(bridge[0], bridge[1]))] = 1
             return True
 
-        except Exception as e:
-            print(f"Error in try_connect_components: {str(e)}")
-            return False
+    def _rollback_changes(self, u, v):
+        """Откатывает изменения, связанные с добавлением моста между u и v."""
+        if self.graph.has_edge(u, v):
+            self.graph.remove_edge(u, v)
+        bridge_key = (min(u, v), max(u, v))
+        if bridge_key in self.current_solution:
+            del self.current_solution[bridge_key]
 
     def build_graph_from_solution(self, solution):
         """Создает граф NetworkX на основе решения."""
@@ -278,88 +370,4 @@ class LocalSearch:
             else:  # Первый мост горизонтальный
                 return (min(x1, x2) <= x3 <= max(x1, x2) and
                         min(y3, y4) <= y1 <= max(y3, y4))
-        return False
-
-    def _repair_broken_islands_fast(self, broken_islands, fixed_bridges, all_islands):
-        """Быстрый ремонт сломанных островов."""
-        max_repair_attempts = 5
-        repair_attempts = 0
-        visited_islands = set()
-        
-        while broken_islands and repair_attempts < max_repair_attempts:
-            repair_attempts += 1
-            
-            # Выбираем остров с наибольшей разницей между текущей и требуемой степенью
-            island_to_fix = max(broken_islands, 
-                              key=lambda x: abs(self.graph.degree(x) - self._island_degrees[x]))
-            
-            if island_to_fix in visited_islands:
-                continue
-                
-            visited_islands.add(island_to_fix)
-            incident_edges = list(self.graph.edges(island_to_fix, data=True))
-            
-            island_degree = self._island_degrees[island_to_fix]
-            current_degree = sum(data['weight'] for _, _, data in incident_edges)
-            
-            if current_degree > island_degree:
-                # Удаляем мост с наименьшим приоритетом
-                removable_edges = [(edge, self._bridge_priorities.get((min(edge[0], edge[1]), max(edge[0], edge[1])), 0))
-                                 for edge in incident_edges 
-                                 if (min(edge[0], edge[1]), max(edge[0], edge[1])) not in fixed_bridges]
-                if not removable_edges:
-                    return False
-                    
-                edge_to_remove = min(removable_edges, key=lambda x: x[1])[0]
-                self.graph.remove_edge(edge_to_remove[0], edge_to_remove[1])
-                broken_islands.add(edge_to_remove[1])
-                
-            elif current_degree < island_degree:
-                # Пытаемся добавить мост с наивысшим приоритетом
-                best_bridge = None
-                best_priority = -1
-                
-                for other in all_islands:
-                    if other != island_to_fix and not self.graph.has_edge(island_to_fix, other):
-                        bridge = (min(island_to_fix, other), max(island_to_fix, other))
-                        if bridge in self._possible_bridges and bridge not in fixed_bridges:
-                            if not self._has_intersections_fast(
-                                self._island_positions[island_to_fix],
-                                self._island_positions[other]
-                            ):
-                                priority = self._bridge_priorities.get(bridge, 0)
-                                if priority > best_priority:
-                                    best_priority = priority
-                                    best_bridge = (other, bridge)
-                
-                if best_bridge:
-                    other, bridge = best_bridge
-                    self.graph.add_edge(island_to_fix, other, weight=1)
-                    broken_islands.add(other)
-                else:
-                    return False
-                    
-        return len(broken_islands) == 0
-
-    def add_cut_constraint_to_model(self, component):
-        """Добавляет ограничение разреза для компонента."""
-        try:
-            if not component:
-                return False
-
-            # Создаем ограничение для компонента
-            constraint = self.solver.Constraint(0, float('inf'))
-            
-            # Добавляем переменные мостов, соединяющих компонент с остальным графом
-            for island1 in component:
-                for island2 in self._possible_bridges:
-                    if island2 not in component:
-                        if (island1, island2) in self.bridge_vars:
-                            constraint.SetCoefficient(self.bridge_vars[(island1, island2)], 1)
-                        if (island2, island1) in self.bridge_vars:
-                            constraint.SetCoefficient(self.bridge_vars[(island2, island1)], 1)
-            
-            return True
-        except Exception as e:
-            print(f"Error adding cut constraint: {e}")
             return False

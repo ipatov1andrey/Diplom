@@ -54,8 +54,12 @@ class Model:
         # (3) Ограничение пересечений (уравнение 3 в документе)
         for intersection in self.puzzle.get_intersections():
             (i, j), (k, l) = list(intersection)
+            i1, j1 = min(i, j), max(i, j)
+            k1, l1 = min(k, l), max(k, l)
+            # Важное исправление: используем только x (single), т.к. x=1 означает наличие хотя бы одного моста.
+            # Это разрешает двойной мост на одном ребре, но запрещает одновременную активность пересекающихся рёбер.
             constraint = self.solver.Add(
-                self.single_bridge[min(i, j), max(i, j)] + self.single_bridge[min(k, l), max(k, l)] <= 1)
+                self.single_bridge[i1, j1] + self.single_bridge[k1, l1] <= 1)
             self.intersection_constraints.append(constraint)
 
         # (4) Ограничение слабой связности (уравнение 4 в документе)

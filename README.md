@@ -1,23 +1,55 @@
-# Diplom Project
+## Hashiwokakero (Hashi) — генератор и решатели
 
-This repository contains the source code for the Diplom project.
+Проект генерирует головоломки Hashiwokakero и валидирует их тремя решателями (Original ILP, Flow ILP, Modified iterative ILP). Генератор адаптивен, контролирует долю двойных мостов, поддерживает степени островов до 8, обеспечивает связность без пересечений.
 
-## Description
+### Полная установка (Windows PowerShell)
+1) Клонировать репозиторий
+```bash
+git clone https://github.com/ipatov1andrey/Diplom.git
+cd Diplom
+```
 
-[Add a brief description of your project here]
+2) Создать и активировать виртуальное окружение
+```bash
+python -m venv .venv
+. .venv/Scripts/activate
+```
 
-## Installation
-
-1. Clone the repository
-2. Install dependencies:
+3) Установить зависимости
 ```bash
 pip install -r requirements.txt
 ```
 
-## Usage
+Если у вас не установлен Git, можно скачать ZIP с GitHub [`Diplom`](https://github.com/ipatov1andrey/Diplom.git), распаковать и продолжить со шага (2).
 
-[Add instructions on how to use your project]
+### Запуск
+Интерактивное меню запускается так:
+```bash
+python -m src.main1
+```
+Далее выберите режим генерации (предустановки или свои параметры) и введите:
+- размеры сетки (w, h),
+- количество островов,
+- целевой процент двойных мостов,
+- количество генерируемых пазлов.
 
-## License
+Результаты сохраняются в:
+- папка: `examples/generator_results/<конфигурация>/`
+- файлы пазлов: `.has`
+- изображения решений: `.png`
 
-[Add your chosen license here]
+### Ключевые особенности генератора
+- Размещение островов с учётом видимости соседей
+- Построение MST без пересечений, рисование после отбора рёбер
+- Принудительное объединение компонент до связности и ранний отказ при нарушениях
+- Поддержка степеней до 8, ограничение целевых 7/8 по параметрам
+- Доля двойных мостов по целевому проценту (feedback)
+- Валидация тремя решателями перед сохранением
+
+### Где править логику
+- Генератор: `hashiwokakero/hashi/generator.py`
+- Основное меню/пайплайн: `src/main1.py`
+- Модели и солверы: `src/core/*.py`
+
+### Лицензия
+GPL-3.0. См. `hashiwokakero/README.md` и `hashiwokakero/LICENSE`.
