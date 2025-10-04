@@ -20,8 +20,6 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Если у вас не установлен Git, можно скачать ZIP с GitHub [`Diplom`](https://github.com/ipatov1andrey/Diplom.git), распаковать и продолжить со шага (2).
-
 ### Запуск
 Интерактивное меню запускается так:
 ```bash

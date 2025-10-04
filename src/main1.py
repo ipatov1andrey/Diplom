@@ -583,9 +583,8 @@ def generate_puzzles():
             os.makedirs(puzzle_dir, exist_ok=True)
 
             attempts = 0
-            max_attempts = 30  # Больше попыток с ранним фильтром
             saved = False
-            while attempts < max_attempts and not saved:
+            while not saved:
                 attempts += 1
                 try:
                     generated = generate_solvable_puzzle(
@@ -684,7 +683,7 @@ def generate_puzzles():
                         pass
 
             if not saved:
-                print(f"  Не удалось получить решаемую головоломку за {max_attempts} попыток для конфигурации {puzzle_name}")
+                print(f"  Не удалось получить решаемую головоломку для конфигурации {puzzle_name}")
 
         print("\nВсе пазлы сгенерированы успешно!")
         return True
